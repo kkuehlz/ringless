@@ -1,0 +1,25 @@
+{
+  "name": "ring-nosub",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@u4/opencv4nodejs": "^6.5.2",
+    "chokidar": "^3.5.3",
+    "dotenv": "^16.3.1",
+    "opencv4nodejs": "^5.6.0",
+    "ring-client-api": "^12.1.0"
+  },
+  "opencv4nodejs": {
+    "disableAutoBuild": 1,
+    "opencvIncludeDir": "/usr/local/Cellar/opencv/4.8.1_5/include/opencv4",
+    "opencvLibDir": "/usr/local/Cellar/opencv/4.8.1_5/lib",
+    "opencvBinDir": "/usr/local/Cellar/opencv/4.8.1_5/bin",
+    "autoBuildOpencvVersion": "4.8.1"
+  }
+}
