@@ -1,22 +1,24 @@
 require('dotenv').config()
+const assert = require('assert')
 const os = require('os')
 const { exec } = require('child_process')
 const path = require('path')
-const fs = require('fs/promises')
+const fsp = require('fs/promises')
 const cv = require('@u4/opencv4nodejs')
 const chokidar = require('chokidar')
 const { RingApi } = require('ring/packages/ring-client-api/lib')
 const { FlatQueue } = require('./flatqueue.js')
+const { PngImageUnpacker } = require('./png.js')
 
 const DEBUG = true
 
 const FRAMES_PER_SECOND = process.env.FRAMES_PER_SECOND || String(9)
-const TIMEOUT_SECONDS = parseInt(process.env.RECORD_SECONDS_AFTER_MOTION || 3)
+const TIMEOUT_SECONDS = parseInt(process.env.RECORD_SECONDS_AFTER_MOTION || 4)
 const CAPTURE_OUTPUT_DIRECTORY = process.env.CAPTURE_OUTPUT_DIRECTORY || process.cwd()
+const FFMPEG_DEMUX_BACKEND = process.env.FFMPEG_DEMUX_BACKEND || 'image2pipe'
 
-//////////////////////////////////////////////////////////
-// Utils
-//////////////////////////////////////////////////////////
+assert(FFMPEG_DEMUX_BACKEND == 'image2' || FFMPEG_DEMUX_BACKEND == 'image2pipe', 'Only image2 and image2pipe are supported')
+
 const execShellCommand = (cmd) => {
   return new Promise((resolve, reject) => {
     exec(cmd, (error, stdout, stderr) => {
@@ -33,16 +35,13 @@ const getTimestamp = () => {
   return iso.slice(0, iso.length-5)
 }
 
-//////////////////////////////////////////////////////////
-// Person detection
-//////////////////////////////////////////////////////////
+const nn = cv.readNetFromCaffe(
+  'model/MobileNetSSD_deploy.prototxt.txt',
+  'model/MobileNetSSD_deploy.caffemodel',
+)
 isPersonInFrame = (file) => {
-  const nn = cv.readNetFromCaffe(
-    'model/MobileNetSSD_deploy.prototxt.txt',
-    'model/MobileNetSSD_deploy.caffemodel',
-  )
   const MOBILENET_CLASS_PERSON = 15;
-  const frame = cv.imread(file)
+  const frame = Buffer.isBuffer(file) ? cv.imdecode(file) : cv.imread(file)
   const mean = new cv.Vec3(127.5, 127.5, 127.5)
   const size = new cv.Size(300, 300)
   const blob = cv.blobFromImage(frame.resize(300, 300), 0.007843, size, mean, false, false)
@@ -63,39 +62,37 @@ isPersonInFrame = (file) => {
   return false
 }
 
-stitchFramesTogether = async (inputDir, outputDir, outputBasename) => {
-	ffmpegArgs = [
-	  "ffmpeg",
-	  "-y",
-    `-framerate ${FRAMES_PER_SECOND}`,
-    "-pattern_type glob",
-    `-i ${inputDir}/*.jpg`,
-    "-c:v libx264",
-    "-pix_fmt yuv420p",
-    "-loglevel error",
-    `${outputDir}/${outputBasename}.mp4`
-  ]
-	cmdString = ffmpegArgs.join(' ')
+stitchFramesTogether = async (inputDir, outputDir, outputBasename, ext) => {
+ffmpegArgs = [
+  'ffmpeg',
+  '-y',
+  `-framerate ${FRAMES_PER_SECOND}`,
+  `-i ${inputDir}/frame_%04d.${ext}`,
+  '-c:v libx264',
+  '-pix_fmt yuv420p',
+  '-loglevel error',
+  `${outputDir}/${outputBasename}.mp4`
+]
+cmdString = ffmpegArgs.join(' ')
   if (DEBUG) {
     console.log("Executing: ", cmdString)
   }
-	await execShellCommand(cmdString)
+  await execShellCommand(cmdString)
 }
 
-const onMotionDetected = async (camera) => {
+const onMotionDetectedImage2 = async (camera) => {
   const cameraNameNormalized = camera.name.replace(/ /g, "_")
   console.log(`${camera.name}: Motion Started`)
 
   const [liveSession, scratchDir] = await Promise.all([
     camera.startLiveCall(),
-    fs.mkdtemp(path.join(os.tmpdir(), cameraNameNormalized)),
+    fsp.mkdtemp(path.join(os.tmpdir(), cameraNameNormalized)),
   ])
 
   if (DEBUG) {
     console.log(`${camera.name}: Created ${scratchDir}`)
   }
 
-  // Create a temporary directory demuxed frames
   let consecutiveFramesWithoutPerson = 0
 
   const queue = new FlatQueue();
@@ -116,8 +113,8 @@ const onMotionDetected = async (camera) => {
           console.log(`${camera.name}: Person disappeared. Stopping video after ${totalCaptureTime} seconds`)
           liveSession.stop()
           await watcher.close()
-          await stitchFramesTogether(scratchDir, CAPTURE_OUTPUT_DIRECTORY, "detect_" + getTimestamp())
-          await fs.rm(scratchDir, { recursive: true, force: true })
+          await stitchFramesTogether(scratchDir, CAPTURE_OUTPUT_DIRECTORY, "detect_" + getTimestamp(), 'jpg')
+          await fsp.rm(scratchDir, { recursive: true, force: true })
         }
       }
     }
@@ -145,6 +142,59 @@ const onMotionDetected = async (camera) => {
   await liveSession.startTranscoding(ffmpegOptions)
 }
 
+const onMotionDetectedImage2Pipe = async (camera) => {
+  const cameraNameNormalized = camera.name.replace(/ /g, "_")
+  console.log(`${camera.name}: Motion Started`)
+
+  const [liveSession, scratchDir] = await Promise.all([
+    camera.startLiveCall(),
+    fsp.mkdtemp(path.join(os.tmpdir(), cameraNameNormalized)),
+  ])
+
+  if (DEBUG) {
+    console.log(`${camera.name}: Created ${scratchDir}`)
+  }
+
+  let consecutiveFramesWithoutPerson = 0
+  let ioJobs = []
+  const unpacker = new PngImageUnpacker()
+  const ffmpegOptions = {
+    video: ['-vcodec', 'png'],
+    output: [
+      '-s', '1920x1080',       // resolution
+      '-f', 'image2pipe',      // demux videos to stream
+      '-r', FRAMES_PER_SECOND, // frame rate
+      'pipe:1',                // stream to stdout
+    ],
+    stdoutCallback: (async (data) => {
+      const images = unpacker.addData(data)
+      for (const image of images) {
+        const imageIndex = String(ioJobs.length+1).padStart(4, 0)
+        ioJobs.push(fsp.writeFile(`${scratchDir}/frame_${imageIndex}.png`, image))
+        if (isPersonInFrame(image)) {
+          consecutiveFramesWithoutPerson = 0
+        } else {
+          ++consecutiveFramesWithoutPerson
+          if (consecutiveFramesWithoutPerson === FRAMES_PER_SECOND*TIMEOUT_SECONDS) {
+            const totalCaptureTime = ioJobs.length / FRAMES_PER_SECOND
+            console.log(`${camera.name}: Person disappeared. Stopping video after ${totalCaptureTime} seconds`)
+
+            // Tell ring to stop recording
+            liveSession.stop()
+
+            // Wait for all write jobs to complete Convert the frames back into
+            // a video and delete the scratch directory.
+            await Promise.all(ioJobs)
+            await stitchFramesTogether(scratchDir, CAPTURE_OUTPUT_DIRECTORY, "detect_" + getTimestamp(), 'png')
+            await fsp.rm(scratchDir, { recursive: true, force: true })
+          }
+        }
+      }
+    }),
+  }
+  await liveSession.startTranscoding(ffmpegOptions)
+}
+
 (async() => {
   const ringApi = new RingApi({
     refreshToken: process.env.RING_REFRESH_TOKEN
@@ -157,12 +207,12 @@ const onMotionDetected = async (camera) => {
         return
       }
 
-      const currentConfig = await fs.readFile('.env'),
-        updatedConfig = currentConfig
-          .toString()
-          .replace(oldRefreshToken, newRefreshToken)
+      const currentConfig = await fsp.readFile('.env')
+      const updatedConfig = currentConfig
+        .toString()
+        .replace(oldRefreshToken, newRefreshToken)
 
-      await fs.writeFile('.env', updatedConfig)
+      await fsp.writeFile('.env', updatedConfig)
     },
   )
 
@@ -177,7 +227,11 @@ const onMotionDetected = async (camera) => {
   const cameras = await ringApi.getCameras()
   for (const camera of cameras) {
     camera.onMotionStarted.subscribe(async () => {
-      await onMotionDetected(camera)
+      if (FFMPEG_DEMUX_BACKEND == 'image2pipe') {
+        await onMotionDetectedImage2Pipe(camera)
+      } else {
+        await onMotionDetectedImage2(camera)
+      }
     })
   }
 })()
