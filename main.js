@@ -5,7 +5,8 @@ const path = require('path')
 const fs = require('fs/promises')
 const cv = require('@u4/opencv4nodejs')
 const chokidar = require('chokidar')
-const { RingApi } = require('ring-client-api')
+const { RingApi } = require('ring/packages/ring-client-api/lib')
+const { FlatQueue } = require('./flatqueue.js')
 
 const DEBUG = true
 
@@ -53,7 +54,7 @@ isPersonInFrame = (file) => {
     const classId = output.at([0, 0, i, 1])
     const confidence = output.at([0, 0, i, 2])
     if (DEBUG) {
-      console.log(`${file}: class=${classId}, confidence=${confidence}`)
+      //console.log(`${file}: class=${classId}, confidence=${confidence}`)
     }
     if (classId === MOBILENET_CLASS_PERSON && confidence > 0.30) {
       return true
@@ -72,13 +73,76 @@ stitchFramesTogether = async (inputDir, outputDir, outputBasename) => {
     "-c:v libx264",
     "-pix_fmt yuv420p",
     "-loglevel error",
-    `${outputBasename}.mp4`
+    `${outputDir}/${outputBasename}.mp4`
   ]
 	cmdString = ffmpegArgs.join(' ')
   if (DEBUG) {
     console.log("Executing: ", cmdString)
   }
 	await execShellCommand(cmdString)
+}
+
+const onMotionDetected = async (camera) => {
+  const cameraNameNormalized = camera.name.replace(/ /g, "_")
+  console.log(`${camera.name}: Motion Started`)
+
+  const [liveSession, scratchDir] = await Promise.all([
+    camera.startLiveCall(),
+    fs.mkdtemp(path.join(os.tmpdir(), cameraNameNormalized)),
+  ])
+
+  if (DEBUG) {
+    console.log(`${camera.name}: Created ${scratchDir}`)
+  }
+
+  // Create a temporary directory demuxed frames
+  let consecutiveFramesWithoutPerson = 0
+
+  const queue = new FlatQueue();
+  let nextExpectedFrame = 1
+  const watcher = chokidar.watch(scratchDir, {ignored: /^\./, persistent: true})
+
+  const processFrameQueue = async () => {
+    while (queue.length > 0 && queue.peekValue() === nextExpectedFrame) {
+      imagePath = queue.pop()
+      console.log("Processing ", imagePath)
+      ++nextExpectedFrame
+      if (isPersonInFrame(imagePath)) {
+        consecutiveFramesWithoutPerson = 0
+      } else {
+        ++consecutiveFramesWithoutPerson
+        if (consecutiveFramesWithoutPerson === FRAMES_PER_SECOND*TIMEOUT_SECONDS) {
+          const totalCaptureTime = (nextExpectedFrame-1) / FRAMES_PER_SECOND
+          console.log(`${camera.name}: Person disappeared. Stopping video after ${totalCaptureTime} seconds`)
+          liveSession.stop()
+          await watcher.close()
+          await stitchFramesTogether(scratchDir, CAPTURE_OUTPUT_DIRECTORY, "detect_" + getTimestamp())
+          await fs.rm(scratchDir, { recursive: true, force: true })
+        }
+      }
+    }
+  }
+
+  watcher.on('add', async (imagePath) => {
+    const filename = imagePath.split('/').pop()
+    const m = filename.match(/frame_(\d{4,})\.jpg/)
+    if (m) {
+      const frameIndex = parseInt(m[1])
+      queue.push(imagePath, frameIndex)
+      await processFrameQueue()
+    }
+  })
+
+  const ffmpegOptions = {
+    video: ['-vcodec', 'mjpeg'],
+    output: [
+      '-s', '1920x1080',       // resolution
+      '-f', 'image2',          // demux videos to sequence of images
+      '-r', FRAMES_PER_SECOND, // frame rate
+      `${scratchDir}/frame_%04d.jpg`  // output file pattern
+    ],
+  }
+  await liveSession.startTranscoding(ffmpegOptions)
 }
 
 (async() => {
@@ -112,46 +176,8 @@ stitchFramesTogether = async (inputDir, outputDir, outputBasename) => {
 
   const cameras = await ringApi.getCameras()
   for (const camera of cameras) {
-    const cameraNameNormalized = camera.name.replace(/ /g, "_")
     camera.onMotionStarted.subscribe(async () => {
-      console.log(`${camera.name}: Motion Started`)
-
-      const [liveSession, scratchDir] = await Promise.all([
-        camera.startLiveCall(),
-        fs.mkdtemp(path.join(os.tmpdir(), cameraNameNormalized)),
-      ])
-
-      if (DEBUG) {
-        console.log(`${camera.name}: Created ${scratchDir}`)
-      }
-
-      // Create a temporary directory demuxed frames
-      let consecutiveFramesWithoutPerson = 0
-      let framesProcessed = 0
-      const watcher = chokidar.watch(scratchDir, {ignored: /^\./, persistent: true})
-      watcher.on('add', async (imagePath) => {
-        ++framesProcessed
-        if (isPersonInFrame(imagePath)) {
-          consecutiveFramesWithoutPerson = 0
-        } else {
-          ++consecutiveFramesWithoutPerson
-          if (consecutiveFramesWithoutPerson === FRAMES_PER_SECOND*TIMEOUT_SECONDS) {
-            const totalCaptureTime = framesProcessed / FRAMES_PER_SECOND
-            console.log(`${camera.name}: Person disappeared. Stopping video after ${totalCaptureTime} seconds`)
-          }
-        }
-      })
-
-      const ffmpegOptions = {
-        video: ['-vcodec', 'mjpeg'],
-        output: [
-          '-s', '1920x1080',       // resolution
-          '-f', 'image2',          // demux videos to sequence of images
-          '-r', FRAMES_PER_SECOND, // frame rate
-          `${scratchDir}/frame_%04d.jpg`  // output file pattern
-        ],
-      }
-      await liveSession.startTranscoding(ffmpegOptions)
+      await onMotionDetected(camera)
     })
   }
 })()
