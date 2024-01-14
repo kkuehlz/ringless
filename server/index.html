@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+  <title>Timeline</title>
+  <script type="text/javascript" src="https://unpkg.com/vis-timeline@latest/standalone/umd/vis-timeline-graph2d.min.js"></script>
+  <link href="https://unpkg.com/vis-timeline@latest/styles/vis-timeline-graph2d.min.css" rel="stylesheet" type="text/css" />
+  <style type="text/css">
+    body {
+      padding: 2em;
+      max-width:1200px;
+    }
+    #timeline {
+      border: 1px solid lightgray;
+    }
+    #player {
+      height: calc(100vh - 250px - 4em); /* Remaining height */
+    }
+  </style>
+</head>
+
+<body>
+<div id="timeline"></div>
+<video src="" width="100%" id="player" type="video/mp4" controls></video>
+
+<script type="text/javascript">
+const getRequest = async (route) => {
+  try {
+    const response = await fetch(`${location.origin}${route}`);
+    if (!response.ok) {
+      console.error('There was a problem fetching the captures:', error);
+    }
+    return response
+  } catch (error) {
+    console.error('There was a problem fetching the captures:', error);
+  }
+}
+
+const minJsDate = vis.moment(new Date(0))
+const maxJsDate = vis.moment(new Date(8640000000000000))
+
+let startDateRange = maxJsDate
+let endDateRange = minJsDate
+
+const loadCapturesPromise = getRequest('/get-captures')
+document.addEventListener("DOMContentLoaded", async () => {
+  const captures = await (await loadCapturesPromise).json()
+
+  const timelineContainer = document.getElementById('timeline')
+  const items = new vis.DataSet(captures.map((capturePath) => {
+    const filename = capturePath.split('/').pop()
+    const m = filename.match(/(\d+)_(\d+)\.mp4/)
+    const start = vis.moment.unix(m[1])
+    const end = vis.moment.unix(m[2])
+
+    console.log(start.format('YYYY-MM-DD'), end.format('YYYY-MM-DD'))
+    startDateRange = vis.moment.min(startDateRange, start)
+    endDateRange = vis.moment.max(endDateRange, end)
+
+    const captureDuration = vis.moment.duration(end-start).as('milliseconds') / 1000
+    return {
+      content: `${captureDuration}s`,
+      title: 'test',
+      start: start,
+      type: 'point',
+      end: end,
+      reqPath: '/'+capturePath,
+    }
+  }))
+  const today = vis.moment().startOf('day')
+  const clientUtcOffset = -(new Date().getTimezoneOffset() / 60)
+
+
+  if (endDateRange.isBefore(startDateRange)) {
+    // So people with no captures aren't mega confused
+    startDateRange = today
+    endDateRange = vis.moment().endOf('week')
+  }
+
+  const options = {
+    min: startDateRange,
+    max: endDateRange,
+    maxHeight: "250px",
+    height: "250px",
+    start: today,
+    end: today.clone().add(12, 'hours'),
+    moment: (date) => { return vis.moment(date).utcOffset(clientUtcOffset) },
+  };
+  const timeline = new vis.Timeline(timelineContainer, items, options);
+  timeline.on('select', async (properties) => {
+    if (properties.items.length > 0) {
+      const d = items.get(properties.items[0])
+      const video = document.getElementById('player');
+      video.src = d.reqPath;
+      video.load();
+      video.play();
+    }
+  })
+})
+</script>
+</body>
+</html>

@@ -12,10 +12,12 @@ const { PngImageUnpacker } = require('./png.js')
 
 const DEBUG = true
 
+const RESOLUTION = process.env.RESOLUTION || '1920x1080'
 const FRAMES_PER_SECOND = process.env.FRAMES_PER_SECOND || String(9)
 const TIMEOUT_SECONDS = parseInt(process.env.RECORD_SECONDS_AFTER_MOTION || 4)
 const CAPTURE_OUTPUT_DIRECTORY = process.env.CAPTURE_OUTPUT_DIRECTORY || process.cwd()
 const FFMPEG_DEMUX_BACKEND = process.env.FFMPEG_DEMUX_BACKEND || 'image2pipe'
+
 
 assert(FFMPEG_DEMUX_BACKEND == 'image2' || FFMPEG_DEMUX_BACKEND == 'image2pipe', 'Only image2 and image2pipe are supported')
 
@@ -52,9 +54,6 @@ isPersonInFrame = (file) => {
   for (let i = 0; i < numDetections; ++i) {
     const classId = output.at([0, 0, i, 1])
     const confidence = output.at([0, 0, i, 2])
-    if (DEBUG) {
-      //console.log(`${file}: class=${classId}, confidence=${confidence}`)
-    }
     if (classId === MOBILENET_CLASS_PERSON && confidence > 0.30) {
       return true
     }
@@ -133,7 +132,7 @@ const onMotionDetectedImage2 = async (camera) => {
   const ffmpegOptions = {
     video: ['-vcodec', 'mjpeg'],
     output: [
-      '-s', '1920x1080',       // resolution
+      '-s', RESOLUTION,       // resolution
       '-f', 'image2',          // demux videos to sequence of images
       '-r', FRAMES_PER_SECOND, // frame rate
       `${scratchDir}/frame_%04d.jpg`  // output file pattern
@@ -161,7 +160,7 @@ const onMotionDetectedImage2Pipe = async (camera) => {
   const ffmpegOptions = {
     video: ['-vcodec', 'png'],
     output: [
-      '-s', '1920x1080',       // resolution
+      '-s', RESOLUTION,        // resolution
       '-f', 'image2pipe',      // demux videos to stream
       '-r', FRAMES_PER_SECOND, // frame rate
       'pipe:1',                // stream to stdout
