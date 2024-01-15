@@ -49,17 +49,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   const items = new vis.DataSet(captures.map((capturePath) => {
     const filename = capturePath.split('/').pop()
     const m = filename.match(/(\d+)_(\d+)\.mp4/)
-    const start = vis.moment.unix(m[1])
-    const end = vis.moment.unix(m[2])
+    const start = vis.moment.unix(m[1]/1000)
+    const end = vis.moment.unix(m[2]/1000)
 
     console.log(start.format('YYYY-MM-DD'), end.format('YYYY-MM-DD'))
     startDateRange = vis.moment.min(startDateRange, start)
     endDateRange = vis.moment.max(endDateRange, end)
 
-    const captureDuration = vis.moment.duration(end-start).as('milliseconds') / 1000
+    const captureDuration = (vis.moment.duration(end-start).as('milliseconds') / 10000).toFixed(2)
     return {
       content: `${captureDuration}s`,
-      title: 'test',
       start: start,
       type: 'point',
       end: end,
@@ -67,11 +66,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }))
   const today = vis.moment().startOf('day')
-  const clientUtcOffset = -(new Date().getTimezoneOffset() / 60)
+  //const clientUtcOffset = -(new Date().getTimezoneOffset() / 60)
 
 
   if (endDateRange.isBefore(startDateRange)) {
-    // So people with no captures aren't mega confused
+    // Default range for no captures
     startDateRange = today
     endDateRange = vis.moment().endOf('week')
   }
@@ -83,7 +82,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     height: "250px",
     start: today,
     end: today.clone().add(12, 'hours'),
-    moment: (date) => { return vis.moment(date).utcOffset(clientUtcOffset) },
+    //moment: (date) => { return vis.moment(date).utcOffset(clientUtcOffset) },
   };
   const timeline = new vis.Timeline(timelineContainer, items, options);
   timeline.on('select', async (properties) => {

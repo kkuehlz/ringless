@@ -1,9 +1,10 @@
+require('dotenv').config({path: __dirname + '/../.env'})
 const express = require('express')
 const path = require('path')
 const fsp = require('fs/promises')
 
 const PORT = process.env.PORT || 3000
-const CAPTURE_ROOT = process.env.CAPTURE_ROOT || path.join(__dirname, 'captures')
+const CAPTURE_ROOT = path.resolve(process.env.CAPTURE_OUTPUT_DIRECTORY || path.join(__dirname, 'captures'))
 
 async function getFiles(dir) {
   const dirents = await fsp.readdir(dir, { withFileTypes: true });
