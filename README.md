@@ -1,8 +1,15 @@
 # Ringless
 
-Self-hosted ring camera capture infrastructure. Hooks into motion detected
-events emitted by the Ring API and records while there is a person in the
-frame.
+Ringless is a self-hosted solution for managing Ring camera captures. Hooks into motion detected events emitted by the Ring API and records while there is a person in the frame.
+
+##### Key Features
+* **Self-hosted data storage**: Keep your own local copies of camera footage.
+* **High signal, low noise**: Only saves footage when a person is in the camera view.
+* **Customizable Capture Settings**: Adjust resolution, frame rate, and recording duration to suit your needs.
+* **Intuitive Timeline View**: Easily access and review captured footage through a user-friendly web interface.
+
+## Project Overview
+Consists of two services: (1) the **monitor daemon** (client), which connects the to the camera livestream, performs person detection, and saves videos to disk. The **web server** is a minimal timeline app for accessing camera footage. Each service runs as a separate process. Each capture will show up as an event on the timeline, and clicking the event will play that video.
 
 ![Ringless Timeline View](https://i.fluffy.cc/Q76SzpmlqJKThfTVdWkV8VnZMQQwrBCB.png)
 
@@ -31,5 +38,17 @@ PORT=<Optional|Default "3000">
 RESOLUTION=<Optional|Default "1920x1080">
 FRAMES_PER_SECOND=<Optional|Default "9">
 TIMEOUT_SECONDS=<Optional|Default "4">
+```
+
+## Running
+
+### Monitor Service
+```
+$ node client/monitor.js
+```
+
+### Web server
+```
+$ node server/serve.js
 ```
 
