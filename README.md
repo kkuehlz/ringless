@@ -2,7 +2,7 @@
 
 Ringless is a self-hosted solution for managing Ring camera captures. Hooks into motion detected events emitted by the Ring API and records while there is a person in the frame.
 
-##### Key Features
+### Key Features
 * **Self-hosted data storage**: Keep your own local copies of camera footage.
 * **High signal, low noise**: Only saves footage when a person is in the camera view.
 * **Customizable Capture Settings**: Adjust resolution, frame rate, and recording duration to suit your needs.

@@ -27,7 +27,7 @@ app.get('/get-captures', async (request, response) => {
   response.json(files.map((file) => { return file.split('/').slice(-3).join('/') }))
 })
 
-app.listen(PORT, () => {
+app.listen(PORT, 'localhost', () => {
   console.log(`Serving files from : ${CAPTURE_ROOT}`)
   console.log(`Listening on port  : ${PORT}`)
 })
