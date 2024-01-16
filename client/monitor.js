@@ -1,4 +1,5 @@
-require('dotenv').config({path: __dirname + '/../.env'})
+const envPath = __dirname + '/../.env'
+require('dotenv').config({path: envPath})
 const os = require('os')
 const { exec } = require('child_process')
 const path = require('path')
@@ -32,7 +33,17 @@ const execShellCommand = (cmd) => {
   });
 }
 
-function getYYYYMMDD(date) {
+const mkdir = async (path, createParent=true) => {
+  try {
+    await fsp.mkdir(path, {recursive:createParent})
+  } catch (e) {
+    if (e.code != "EEXIST") {
+      throw e
+    }
+  }
+}
+
+const getYYYYMMDD = (date) => {
   return date.toISOString().split('T')[0]
 }
 
@@ -134,7 +145,7 @@ const onMotionDetectedImage2Pipe = async (camera) => {
             // First, wait for all write jobs to complete. Convert the frames
             // back into a video, and remove the scratch directory.
             await Promise.all(ioJobs)
-            await fsp.mkdir(outDir, { recursive: true })
+            await mkdir(outDir)
             await stitchFramesTogether(scratchDir, outDir, basename, 'png')
             await fsp.rm(scratchDir, { recursive: true, force: true })
           }
@@ -157,12 +168,12 @@ const onMotionDetectedImage2Pipe = async (camera) => {
         return
       }
 
-      const currentConfig = await fsp.readFile('../.env')
+      const currentConfig = await fsp.readFile(envPath)
       const updatedConfig = currentConfig
         .toString()
         .replace(oldRefreshToken, newRefreshToken)
 
-      await fsp.writeFile('../.env', updatedConfig)
+      await fsp.writeFile(envPath, updatedConfig)
     },
   )
 

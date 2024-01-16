@@ -52,7 +52,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const start = vis.moment.unix(m[1]/1000)
     const end = vis.moment.unix(m[2]/1000)
 
-    console.log(start.format('YYYY-MM-DD'), end.format('YYYY-MM-DD'))
     startDateRange = vis.moment.min(startDateRange, start)
     endDateRange = vis.moment.max(endDateRange, end)
 
