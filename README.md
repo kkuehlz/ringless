@@ -11,7 +11,7 @@ Ringless is a self-hosted solution for managing Ring camera captures. Hooks into
 ## Project Overview
 Consists of two services: (1) the **monitor daemon** (client), which connects the to the camera livestream, performs person detection, and saves videos to disk. The **web server** is a minimal timeline app for accessing camera footage. Each service runs as a separate process. Each capture will show up as an event on the timeline, and clicking the event will play that video.
 
-![Ringless Timeline View](https://i.fluffy.cc/Q76SzpmlqJKThfTVdWkV8VnZMQQwrBCB.png)
+![Ringless Timeline View](https://i.fluffy.cc/kLD1S1G2W6BsFslSssvrFSqm3wcTF58C.png)
 
 ## Setup
 
