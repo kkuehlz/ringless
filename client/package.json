@@ -12,7 +12,6 @@
     "@keur/ring-client-api": "^12.1.1",
     "@u4/opencv4nodejs": "^6.5.2",
     "bl": "^6.0.10",
-    "chokidar": "^3.5.3",
     "dotenv": "^16.3.1",
     "opencv4nodejs": "^5.6.0"
   },

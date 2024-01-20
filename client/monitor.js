@@ -11,6 +11,7 @@ const { PngImageUnpacker } = require('./png.js')
 const DEBUG = (process.env.DEBUG || 'false').toLowerCase() === 'true'
 const RESOLUTION = process.env.RESOLUTION || '1920x1080'
 const FRAMES_PER_SECOND = process.env.FRAMES_PER_SECOND || String(9)
+const SAMPLE_CV_DETECTION = process.env.SAMPLE_CV_DETECTION || false
 const TIMEOUT_SECONDS = parseInt(process.env.RECORD_SECONDS_AFTER_MOTION || 4)
 const CAPTURE_OUTPUT_DIRECTORY = path.resolve(process.env.CAPTURE_OUTPUT_DIRECTORY || path.join(__dirname, '../server/captures'))
 
@@ -20,6 +21,7 @@ console.log(`Capture Resolution              : ${RESOLUTION}`)
 console.log(`Capture FPS                     : ${FRAMES_PER_SECOND} FPS`)
 console.log(`Capture Directory               : ${CAPTURE_OUTPUT_DIRECTORY}`)
 console.log(`Timeout after person disappears : ${TIMEOUT_SECONDS} seconds`)
+console.log(`Sample CV Detection             : ${SAMPLE_CV_DETECTION}`)
 console.log(`DEBUG MODE                      : ${DEBUG}`)
 
 const execShellCommand = (cmd) => {
@@ -127,29 +129,31 @@ const onMotionDetectedImage2Pipe = async (camera) => {
       for (const image of images) {
         const imageIndex = String(ioJobs.length+1).padStart(4, 0)
         ioJobs.push(fsp.writeFile(`${scratchDir}/frame_${imageIndex}.png`, image))
-        if (isPersonInFrame(image)) {
-          consecutiveFramesWithoutPerson = 0
-        } else {
-          ++consecutiveFramesWithoutPerson
-          if (consecutiveFramesWithoutPerson === FRAMES_PER_SECOND*TIMEOUT_SECONDS) {
-            const totalCaptureTime = ioJobs.length / FRAMES_PER_SECOND
-            console.log(`${camera.name}: Person disappeared. Stopping video after ${totalCaptureTime} seconds`)
+	if (!SAMPLE_CV_DETECTION || (ioJobs.length % FRAMES_PER_SECOND === 0)) {
+          if (isPersonInFrame(image)) {
+            consecutiveFramesWithoutPerson = 0
+          } else {
+            ++consecutiveFramesWithoutPerson
+            if (consecutiveFramesWithoutPerson === TIMEOUT_SECONDS) {
+              const totalCaptureTime = ioJobs.length / FRAMES_PER_SECOND
+              console.log(`${camera.name}: Person disappeared. Stopping video after ${totalCaptureTime} seconds`)
 
-            // Tell ring to stop recording
-            liveSession.stop()
-            cameraIsRecording[camera.id] = false
-            const recordingEndTime = Date.now()
-            const outDir = path.join(CAPTURE_OUTPUT_DIRECTORY, getYYYYMMDD(new Date(recordingStartTimestamp)))
-            const basename = `${recordingStartTimestamp}_${recordingEndTime}`
+              // Tell ring to stop recording
+              liveSession.stop()
+              cameraIsRecording[camera.id] = false
+              const recordingEndTime = Date.now()
+              const outDir = path.join(CAPTURE_OUTPUT_DIRECTORY, getYYYYMMDD(new Date(recordingStartTimestamp)))
+              const basename = `${recordingStartTimestamp}_${recordingEndTime}`
 
-            // First, wait for all write jobs to complete. Convert the frames
-            // back into a video, and remove the scratch directory.
-            await Promise.all(ioJobs)
-            await mkdir(outDir)
-            await stitchFramesTogether(scratchDir, outDir, basename, 'png')
-            await fsp.rm(scratchDir, { recursive: true, force: true })
+              // First, wait for all write jobs to complete. Convert the frames
+              // back into a video, and remove the scratch directory.
+              await Promise.all(ioJobs)
+              await mkdir(outDir)
+              await stitchFramesTogether(scratchDir, outDir, basename, 'png')
+              await fsp.rm(scratchDir, { recursive: true, force: true })
+            }
           }
-        }
+	}
       }
     }),
   }
