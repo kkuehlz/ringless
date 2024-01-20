@@ -46,24 +46,28 @@ document.addEventListener("DOMContentLoaded", async () => {
   const captures = await (await loadCapturesPromise).json()
 
   const timelineContainer = document.getElementById('timeline')
-  const items = new vis.DataSet(captures.map((capturePath) => {
-    const filename = capturePath.split('/').pop()
+  const dataset = []
+  for (cap of captures) {
+    const filename = cap.split('/').pop()
     const m = filename.match(/(\d+)_(\d+)\.mp4/)
-    const start = vis.moment.unix(m[1]/1000)
-    const end = vis.moment.unix(m[2]/1000)
+    if (m) {
+      const start = vis.moment.unix(m[1]/1000)
+      const end = vis.moment.unix(m[2]/1000)
 
-    startDateRange = vis.moment.min(startDateRange, start)
-    endDateRange = vis.moment.max(endDateRange, end)
+      startDateRange = vis.moment.min(startDateRange, start)
+      endDateRange = vis.moment.max(endDateRange, end)
 
-    const captureDuration = (vis.moment.duration(end-start).as('milliseconds') / 10000).toFixed(2)
-    return {
-      content: `${captureDuration}s`,
-      start: start,
-      type: 'point',
-      end: end,
-      reqPath: '/'+capturePath,
+      const captureDuration = (vis.moment.duration(end-start).as('milliseconds') / 1000).toFixed(2)
+      dataset.push({
+        content: `${captureDuration}s`,
+        start: start,
+        type: 'point',
+        end: end,
+        reqPath: '/'+cap,
+      })
     }
-  }))
+  }
+  const items = new vis.DataSet(dataset)
   const today = vis.moment().startOf('day')
   //const clientUtcOffset = -(new Date().getTimezoneOffset() / 60)
 
@@ -76,11 +80,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const options = {
     min: startDateRange,
-    max: endDateRange,
+    max: endDateRange.clone().add(1, 'hour'),
     maxHeight: "250px",
     height: "250px",
     start: today,
-    end: today.clone().add(12, 'hours'),
+    end: vis.moment().clone().add(30, 'minutes'),
     //moment: (date) => { return vis.moment(date).utcOffset(clientUtcOffset) },
   };
   const timeline = new vis.Timeline(timelineContainer, items, options);

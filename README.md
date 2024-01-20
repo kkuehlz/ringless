@@ -37,7 +37,7 @@ CAPTURE_OUTPUT_DIRECTORY=<Optional|Default $PROJECT_ROOT/server/captures
 PORT=<Optional|Default "3000">
 RESOLUTION=<Optional|Default "1920x1080">
 FRAMES_PER_SECOND=<Optional|Default "9">
-TIMEOUT_SECONDS=<Optional|Default "4">
+RECORD_SECONDS_AFTER_MOTION=<Optional|Default "4">
 ```
 
 ## Running
